@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: shellcheck -S warning -e SC1090,SC2034,SC2211 scripts/*.sh tools/release.sh
+      - name: Python
+        run: python3 -m py_compile scripts/kit-sub.py
+      - name: Генераторы
+        run: node --test tools/test/*.test.js
+      - name: Проверка копии для --restore (GNU grep и bash)
+        run: |
+          python3 tools/test/restore_env_test.py
+          python3 tools/test/restore_archive_test.py
+      - name: Версия в скриптах совпадает с VERSION
+        run: |
+          v=$(cat VERSION)
+          grep -q "^KIT_VERSION=\"$v\"" scripts/3x-ui.sh
+          grep -q "^KIT_VERSION=\"$v\"" scripts/hysteria2.sh
+          grep -q "^KIT_VERSION=\"$v\"" scripts/kit.sh
+      - name: Подпись релиза совпадает с файлами
+        run: |
+          [ -f SHA256SUMS ] || { echo "SHA256SUMS нет – релиз ещё не подписан"; exit 0; }
+          grep -qx "# 3X-UI KIT $(cat VERSION)" SHA256SUMS
+          grep -v '^#' SHA256SUMS | sha256sum -c -
+          awk '/^KIT_SIGNERS=\(/ {on = 1; next} on && /^\)/ {exit} on && /^ *"/ {gsub(/^ *"|"$/, ""); print "releases@3x-ui-kit namespaces=\"3x-ui-kit-release\" " $0}' scripts/kit.sh >allowed_signers
+          ssh-keygen -Y verify -f allowed_signers -I releases@3x-ui-kit -n 3x-ui-kit-release -s SHA256SUMS.sig <SHA256SUMS
