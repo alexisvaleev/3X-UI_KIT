@@ -12,7 +12,7 @@
 set -Eeuo pipefail
 export LC_ALL=C.UTF-8  # ширина колонок по символам, а не байтам
 
-KIT_VERSION="1.5.0"
+KIT_VERSION="1.5.1"
 KIT_RAW="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/main"
 # Файлы новой версии берём из её тега, а не из меняющейся ветки main.
 kit_ref_raw() { echo "https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v$1"; }
@@ -3027,7 +3027,7 @@ cascade_on() {
   patched=$(cascade_tpl_patch "$tpl" "$ob")
   cascade_apply "$patched" "$tpl"
   st=$(cascade_state)
-  ok "Каскад включён: весь трафик Xray теперь выходит через $(jq -r '.address + ":" + (.port | tostring)' <<<"$st" 2>/dev/null || echo 'зарубежный сервер')"
+  say "Каскад включён: весь трафик Xray теперь выходит через $(jq -r '.address + ":" + (.port | tostring)' <<<"$st" 2>/dev/null || echo 'зарубежный сервер')"
   say "${D}Клиентские подписки менять не нужно: ссылки указывают на этот сервер, каскад – внутри него.${N}"
   say "${D}Исключение – MTProto: он работает отдельным процессом mtg и идёт к серверам Telegram напрямую.${N}"
   say "Выключить: kit cascade off"
@@ -3039,7 +3039,7 @@ cascade_off() {
   jq -e '.outbounds[] | select(.tag == "cascade")' <<<"$tpl" >/dev/null 2>&1 || { say "Каскад и так выключен."; return 0; }
   patched=$(cascade_tpl_patch "$tpl")
   cascade_apply "$patched" "$tpl"
-  ok "Каскад выключен: трафик снова выходит напрямую с этого сервера."
+  say "Каскад выключен: трафик снова выходит напрямую с этого сервера."
 }
 
 # На зарубежном (выходном) сервере: пользователь cascade и ссылка для входного.

@@ -54,7 +54,7 @@
 Подключитесь к серверу по SSH и выполните:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.0/scripts/3x-ui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/3x-ui.sh)
 ```
 
 Если запускаете в терминале, скрипт спросит, под какой сайт маскировать сервер:
@@ -122,7 +122,7 @@ MTProto в режиме «всё на 443»: верный порт в ссылк
 сам поставит KIT, где его нет, и включит каскад):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.0/scripts/kit-cascade.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/kit-cascade.sh)
 ```
 
 Или вручную. На **зарубежном** сервере:
@@ -193,7 +193,7 @@ kit version           # версии kit, панели и ядра, включе
 Сервер ставили версией 1.0? В ней команды `kit update` ещё нет, поэтому один раз:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.0/scripts/kit.sh -o /usr/local/bin/kit && chmod 755 /usr/local/bin/kit && kit update
+curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/kit.sh -o /usr/local/bin/kit && chmod 755 /usr/local/bin/kit && kit update
 ```
 
 Дальше обновления будут приходить сами.
