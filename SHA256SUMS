@@ -1,6 +1,6 @@
-# 3X-UI KIT 1.5.0
-1bbe7f68e9810a1fa62e4739bf2d8baf4379fafeccc36c6201570c472e94d17a  scripts/3x-ui.sh
-233cd3c32035957a144c1d1d174b5efe8c66e57d4017c866691ea25c61fddc8c  scripts/hysteria2.sh
-ff4972bb349c31a701923841babe8862cee0555cac9a7bb821d8882ecebaa5a6  scripts/kit.sh
+# 3X-UI KIT 1.5.1
+c014598a3f087df31fc26f8a2365fe2a3b87f7445d48dcc3f3af48fcb86e5ad5  scripts/3x-ui.sh
+96609e5404fe770fdc3468aeb1f7f89d4da523dfa68fb4eb8e59a9bf9cec09ac  scripts/hysteria2.sh
+07b0a33666932ddbf76fe59f6115c17d0156bf04e5cca501c42aeb9d198fde1a  scripts/kit.sh
 d6a564330b555d7c83b619fa91b9cd1a0f8982d8f0bb6e2faa2467d2a6760a89  scripts/kit-sub.py
-acb57a7135b2d7d6e665f67f056e21353023b93835f54def1ae523bf76f1bfb3  VERSION
+dfe7d71b3f428eb73ed853f8fded65e2986896e21d69f45ebf06bb623b450e14  VERSION
