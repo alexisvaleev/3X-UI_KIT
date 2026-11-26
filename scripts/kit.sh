@@ -12,7 +12,7 @@
 set -Eeuo pipefail
 export LC_ALL=C.UTF-8  # ширина колонок по символам, а не байтам
 
-KIT_VERSION="1.5.4"
+KIT_VERSION="1.5.5"
 KIT_RAW="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/main"
 # Файлы новой версии берём из её тега, а не из меняющейся ветки main.
 kit_ref_raw() { echo "https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v$1"; }
@@ -3114,7 +3114,14 @@ box() { # заголовок, затем пункты; пустой пункт �
   for l in "$@"; do if [[ -z $l ]]; then box_sep; else box_line "$l"; fi; done
   box_bot
 }
-ask_tty() { read -r -p "$1" REPLY </dev/tty || exit 0; }
+# Без управляющего терминала (ssh без -t, неинтерактивные скрипты) раньше был молчаливый exit 0:
+# выглядело как зависание/обрыв. Теперь — явная ошибка с подсказкой.
+ask_tty() {
+  if ! { true < /dev/tty; } 2>/dev/null; then
+    die "этот режим требует интерактивного терминала: подключайтесь с tty (ssh -t) либо используйте команду с аргументами — kit help."
+  fi
+  read -r -p "$1" REPLY </dev/tty || exit 0
+}
 ask_num() { ask_tty "$1"; REPLY=${REPLY//[[:space:]]/}; }
 pause() { read -r -p "${D}Enter – в меню${N} " _ </dev/tty || exit 0; }
 # Подсказка «как сделать через меню» нужна в командной строке, но лишняя, когда человек уже в меню.

@@ -5,7 +5,7 @@
 # и включит каскад: клиенты → входной сервер → зарубежный → интернет.
 set -Eeuo pipefail
 
-KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.4/scripts/3x-ui.sh"
+KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.5/scripts/3x-ui.sh"
 
 if [[ -t 1 ]]; then G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; B=$'\e[1m'; N=$'\e[0m'; else G=''; Y=''; R=''; B=''; N=''; fi
 say() { echo "$*"; }
