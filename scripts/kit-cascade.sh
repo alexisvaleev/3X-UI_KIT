@@ -5,7 +5,7 @@
 # и включит каскад: клиенты → входной сервер → зарубежный → интернет.
 set -Eeuo pipefail
 
-KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.3/scripts/3x-ui.sh"
+KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.4/scripts/3x-ui.sh"
 
 if [[ -t 1 ]]; then G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; B=$'\e[1m'; N=$'\e[0m'; else G=''; Y=''; R=''; B=''; N=''; fi
 say() { echo "$*"; }
@@ -98,12 +98,6 @@ nat_check() { # IP PORT USER PASS метка
   say "${Y}!${N}  продолжаю с сервером за NAT – если порты не проброшены, клиенты не подключатся."
 }
 
-for pfx in IN OUT; do
-  ip=$(eval echo "\${${pfx}_IP}"); port=$(eval echo "\${${pfx}_PORT}"); user=$(eval echo "\${${pfx}_USER}"); pass=$(eval echo "\${${pfx}_PASS}")
-  nat_check "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)" && ok "$ip: публичный IP на интерфейсе, NAT нет"
-  precheck_server "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)"
-done
-
 # Готовим сервер к установке: сносим всё, что мешает, – но только спросив пользователя.
 # Случаи из практики: битая/недоустановленная копия KIT, предустановленный хостером nginx-сайт на 443.
 precheck_server() { # IP PORT USER PASS метка
@@ -144,6 +138,13 @@ precheck_server() { # IP PORT USER PASS метка
   [[ -z $left ]] && { ok "$ip: процесс убит, порт 443 свободен"; return 0; }
   die "не смог освободить 443/tcp на $ip (процесс, вероятно, перезапускается) – разберитесь вручную или пересоздайте VPS."
 }
+
+
+for pfx in IN OUT; do
+  ip=$(eval echo "\${${pfx}_IP}"); port=$(eval echo "\${${pfx}_PORT}"); user=$(eval echo "\${${pfx}_USER}"); pass=$(eval echo "\${${pfx}_PASS}")
+  nat_check "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)" && ok "$ip: публичный IP на интерфейсе, NAT нет"
+  precheck_server "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)"
+done
 
 # Установка KIT там, где его нет.
 install_kit() { # IP USER PORT PASS метка
