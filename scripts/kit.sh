@@ -12,7 +12,7 @@
 set -Eeuo pipefail
 export LC_ALL=C.UTF-8  # ширина колонок по символам, а не байтам
 
-KIT_VERSION="1.5.1"
+KIT_VERSION="1.5.2"
 KIT_RAW="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/main"
 # Файлы новой версии берём из её тега, а не из меняющейся ветки main.
 kit_ref_raw() { echo "https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v$1"; }
@@ -2970,11 +2970,23 @@ print(json.dumps({"tag": "cascade", "protocol": "vless",
 PY
 }
 
+# Правило раздельной маршрутизации: .ru/.su/.рф (punycode xn--p1ai) идут напрямую, минуя каскад.
+# Российские сервисы видят российский IP входного сервера и не режут скорость/доступ.
+# Префикс domain: обязателен: голая строка "ru" в Xray — substring-матч и ловит ложные срабатывания (truth.social, kruxample.com).
+cascade_ru_rule() { printf '%s' '{"type":"field","domain":["domain:ru","domain:su","domain:xn--p1ai"],"outboundTag":"direct"}'; }
+
 cascade_tpl_patch() { # шаблон-json [outbound-json] – вставить/заменить cascade первым или убрать
+  local rule plain; rule=$(cascade_ru_rule)
+  # plain – вариант правила без префиксов domain: из промежуточных версий: удаляем и его, чтобы не остался substring-матч.
+  plain='{"type":"field","domain":["ru","su","xn--p1ai"],"outboundTag":"direct"}'
   if [[ -n ${2:-} ]]; then
-    jq -c --argjson ob "$2" '.outbounds = [$ob] + [.outbounds[] | select(.tag != "cascade")]' <<<"$1"
+    jq -c --argjson ob "$2" --argjson rule "$rule" --argjson plain "$plain" '
+      .outbounds = [$ob] + [.outbounds[] | select(.tag != "cascade")]
+      | .routing.rules = [$rule] + [(.routing.rules // [])[] | select(. != $rule and . != $plain)]' <<<"$1"
   else
-    jq -c '.outbounds = [.outbounds[] | select(.tag != "cascade")]' <<<"$1"
+    jq -c --argjson rule "$rule" --argjson plain "$plain" '
+      .outbounds = [.outbounds[] | select(.tag != "cascade")]
+      | .routing.rules = [(.routing.rules // [])[] | select(. != $rule and . != $plain)]' <<<"$1"
   fi
 }
 
@@ -2998,6 +3010,7 @@ cascade_status() {
   if [[ -n $st ]]; then
     say "Каскад ${G}включён${N}: выход через $(jq -r '.address + ":" + (.port | tostring)' <<<"$st")"
     say "${D}Весь трафик Xray (кроме MTProto) выходит в интернет с зарубежного сервера.${N}"
+    say "${D}Домены .ru/.su/.рф идут напрямую с этого сервера – российские сервисы видят российский IP.${N}"
   else
     say "Каскад выключен: трафик выходит напрямую с этого сервера."
   fi
@@ -3029,6 +3042,7 @@ cascade_on() {
   st=$(cascade_state)
   say "Каскад включён: весь трафик Xray теперь выходит через $(jq -r '.address + ":" + (.port | tostring)' <<<"$st" 2>/dev/null || echo 'зарубежный сервер')"
   say "${D}Клиентские подписки менять не нужно: ссылки указывают на этот сервер, каскад – внутри него.${N}"
+  say "${D}Домены .ru/.su/.рф идут напрямую (не через каскад) – российские сервисы не увидят зарубежный IP.${N}"
   say "${D}Исключение – MTProto: он работает отдельным процессом mtg и идёт к серверам Telegram напрямую.${N}"
   say "Выключить: kit cascade off"
 }

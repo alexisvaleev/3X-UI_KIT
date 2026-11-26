@@ -54,7 +54,7 @@
 Подключитесь к серверу по SSH и выполните:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/3x-ui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/3x-ui.sh)
 ```
 
 Если запускаете в терминале, скрипт спросит, под какой сайт маскировать сервер:
@@ -119,10 +119,12 @@ MTProto в режиме «всё на 443»: верный порт в ссылк
 на зарубежный: клиенты подключаются к серверу в РФ, а в интернет трафик выходит уже с зарубежного IP.
 
 Проще всего – мастером с вашего компьютера (спросит IP, логин и пароль или ключ обоих серверов,
-сам поставит KIT, где его нет, и включит каскад):
+сам поставит KIT, где его нет, и включит каскад).
+Перед установкой мастер проверяет оба сервера: не за NAT ли хостера они (иначе клиенты не подключатся)
+и не занят ли порт 443 чужим сайтом (предложит отключить его автоматически):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/kit-cascade.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/kit-cascade.sh)
 ```
 
 Или вручную. На **зарубежном** сервере:
@@ -146,6 +148,10 @@ kit cascade off              # выключить, трафик снова на�
 и переживает обновления). Перед включением kit проверяет, что зарубежный сервер доступен. Исключение – MTProto:
 он работает отдельным процессом и идёт к серверам Telegram напрямую, без каскада. Лимиты пользователя
 `cascade` на зарубежном сервере ограничивают суммарный трафик всех клиентов каскада.
+
+Раздельная маршрутизация: домены `.ru`, `.su` и `.рф` идут напрямую с входного сервера, минуя каскад —
+российские сервисы (банки, госуслуги, стриминги) видят российский IP и не режут доступ.
+Весь остальной трафик выходит через зарубежный сервер.
 
 ## Дополнительные пользователи
 
@@ -193,7 +199,7 @@ kit version           # версии kit, панели и ядра, включе
 Сервер ставили версией 1.0? В ней команды `kit update` ещё нет, поэтому один раз:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/kit.sh -o /usr/local/bin/kit && chmod 755 /usr/local/bin/kit && kit update
+curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/kit.sh -o /usr/local/bin/kit && chmod 755 /usr/local/bin/kit && kit update
 ```
 
 Дальше обновления будут приходить сами.

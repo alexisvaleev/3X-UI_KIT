@@ -5,7 +5,7 @@
 # и включит каскад: клиенты → входной сервер → зарубежный → интернет.
 set -Eeuo pipefail
 
-KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.1/scripts/3x-ui.sh"
+KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/3x-ui.sh"
 
 if [[ -t 1 ]]; then G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; B=$'\e[1m'; N=$'\e[0m'; else G=''; Y=''; R=''; B=''; N=''; fi
 say() { echo "$*"; }
@@ -80,6 +80,54 @@ for pfx in IN OUT; do
     die "не подключился к $ip по SSH. Причина: $(tail -2 <<<"$err" | tr '\n' ' ')"
   fi
 done
+
+
+# Сервер за NAT хостера (серый IP на интерфейсе) не может принимать подключения клиентов:
+# ему доступны только проброшенные провайдером порты. Спрашиваем, прежде чем ставить.
+nat_check() { # IP PORT USER PASS метка
+  local ip=$1 port=$2 user=$3 pass=$4 label=$5 out pub ifs
+  out=$(SSH_EXEC_TIMEOUT=25 ssh_exec "$ip" "$user" "$port" "$pass" 'hostname -I 2>/dev/null; curl -s -4 -m 8 ifconfig.me 2>/dev/null || true' 2>/dev/null || true)
+  ifs=$(head -1 <<<"$out"); pub=$(tail -1 <<<"$out")
+  [[ $pub =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { say "${Y}!${N}  не смог проверить NAT на $ip (ifconfig.me не ответил) – продолжаю."; return 0; }
+  grep -qw "$pub" <<<"$ifs" && return 0
+  echo
+  say "${Y}!${N}  $label сервер $ip за NAT хостера: публичный адрес $pub, а на интерфейсах сервера – $ifs."
+  say "    Клиенты подключатся, только если хостер пробрасывает порты (443/tcp, 443/udp, 8443/tcp) в панели."
+  ask "    Продолжить всё равно? [y/N]" ""
+  [[ ${REPLY,,} == y || ${REPLY,,} == yes ]] || die "остановлено. Возьмите VPS с выделенным публичным IP или пробросьте порты – и запустите мастер снова."
+  say "${Y}!${N}  продолжаю с сервером за NAT – если порты не проброшены, клиенты не подключатся."
+}
+
+for pfx in IN OUT; do
+  ip=$(eval echo "\${${pfx}_IP}"); port=$(eval echo "\${${pfx}_PORT}"); user=$(eval echo "\${${pfx}_USER}"); pass=$(eval echo "\${${pfx}_PASS}")
+  nat_check "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)" && ok "$ip: публичный IP на интерфейсе, NAT нет"
+  port443_check "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)"
+done
+
+# Если 443/tcp уже занят (обычно предустановленным хостером nginx-сайтом), установщик не сможет
+# поднять однопортовую схему, и каскад не включится. Предлагаем убрать чужие сайты заранее.
+port443_check() { # IP PORT USER PASS метка
+  local ip=$1 port=$2 user=$3 pass=$4 label=$5 listener left
+  ssh_exec "$ip" "$user" "$port" "$pass" 'command -v kit >/dev/null 2>&1' 2>/dev/null && return 0  # KIT уже стоит – не трогаем
+  listener=$(SSH_EXEC_TIMEOUT=25 ssh_exec "$ip" "$user" "$port" "$pass" 'ss -ltnp 2>/dev/null | grep ":443 " | head -1' 2>/dev/null)
+  [[ -n $listener ]] || return 0
+  echo
+  if grep -q nginx <<<"$listener"; then
+    say "${Y}!${N}  $label сервер $ip: порт 443 занят чужим nginx-сайтом – с ним VPN-сервер не поднимется правильно."
+    say "    Могу отключить чужие сайты nginx (файлы останутся в /etc/nginx, удаляется только их активация)."
+    ask "    Отключить чужие nginx-сайты на $ip? [Y/n]" Y
+    if [[ ${REPLY,,} != n && ${REPLY,,} != no ]]; then
+      ssh_exec "$ip" "$user" "$port" "$pass" 'rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null; (systemctl reload nginx 2>/dev/null || systemctl stop nginx 2>/dev/null) >/dev/null 2>&1; true' >/dev/null 2>&1
+      sleep 1
+      left=$(SSH_EXEC_TIMEOUT=25 ssh_exec "$ip" "$user" "$port" "$pass" 'ss -ltn 2>/dev/null | grep ":443 " | head -1' 2>/dev/null)
+      if [[ -z $left ]]; then ok "$ip: порт 443 освобождён"; return 0; fi
+    fi
+    die "порт 443 на $ip всё ещё занят – освободите его вручную и запустите мастер снова, либо пересоздайте VPS чистой."
+  fi
+  say "${Y}!${N}  $label сервер $ip: порт 443 занят процессом: ${listener:0:100}"
+  ask "    Продолжить всё равно? [y/N]" ""
+  [[ ${REPLY,,} == y || ${REPLY,,} == yes ]] || die "остановлено. Освободите 443/tcp на $ip и запустите мастер снова."
+}
 
 # Установка KIT там, где его нет.
 install_kit() { # IP USER PORT PASS метка
