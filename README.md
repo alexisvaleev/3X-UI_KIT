@@ -5,7 +5,7 @@ VPN-сервер на чистом VPS за одну команду. Стави�
 Домен не обязателен.
 
 ```
-bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/3x-ui.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.3/scripts/3x-ui.sh)
 ```
 
 Требования: Ubuntu 22.04/24.04 или Debian 12/13, root по SSH, свободные порты 80 и 443.
@@ -48,7 +48,7 @@ NAT у хостера (серый IP не сможет принимать кли
 Домены `.ru`/`.su`/`.рф` пойдут напрямую с входного сервера, всё остальное — через зарубежный IP:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/kit-cascade.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.3/scripts/kit-cascade.sh)
 ```
 
 Или вручную на самих серверах:

@@ -5,7 +5,7 @@
 # и включит каскад: клиенты → входной сервер → зарубежный → интернет.
 set -Eeuo pipefail
 
-KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.2/scripts/3x-ui.sh"
+KIT_INSTALL_URL="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v1.5.3/scripts/3x-ui.sh"
 
 if [[ -t 1 ]]; then G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; B=$'\e[1m'; N=$'\e[0m'; else G=''; Y=''; R=''; B=''; N=''; fi
 say() { echo "$*"; }
@@ -101,32 +101,48 @@ nat_check() { # IP PORT USER PASS метка
 for pfx in IN OUT; do
   ip=$(eval echo "\${${pfx}_IP}"); port=$(eval echo "\${${pfx}_PORT}"); user=$(eval echo "\${${pfx}_USER}"); pass=$(eval echo "\${${pfx}_PASS}")
   nat_check "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)" && ok "$ip: публичный IP на интерфейсе, NAT нет"
-  port443_check "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)"
+  precheck_server "$ip" "$port" "$user" "$pass" "$([[ $pfx == IN ]] && echo входной || echo зарубежный)"
 done
 
-# Если 443/tcp уже занят (обычно предустановленным хостером nginx-сайтом), установщик не сможет
-# поднять однопортовую схему, и каскад не включится. Предлагаем убрать чужие сайты заранее.
-port443_check() { # IP PORT USER PASS метка
-  local ip=$1 port=$2 user=$3 pass=$4 label=$5 listener left
-  ssh_exec "$ip" "$user" "$port" "$pass" 'command -v kit >/dev/null 2>&1' 2>/dev/null && return 0  # KIT уже стоит – не трогаем
+# Готовим сервер к установке: сносим всё, что мешает, – но только спросив пользователя.
+# Случаи из практики: битая/недоустановленная копия KIT, предустановленный хостером nginx-сайт на 443.
+precheck_server() { # IP PORT USER PASS метка
+  local ip=$1 port=$2 user=$3 pass=$4 label=$5 listener left st pid
+  # 1. KIT уже стоит: живой – не трогаем; мёртвый/битый – предлагаем снести и поставить начисто.
+  if ssh_exec "$ip" "$user" "$port" "$pass" 'command -v kit >/dev/null 2>&1' 2>/dev/null; then
+    st=$(SSH_EXEC_TIMEOUT=20 ssh_exec "$ip" "$user" "$port" "$pass" 'systemctl is-active x-ui 2>/dev/null' 2>/dev/null)
+    if [[ $st == active ]]; then return 0; fi
+    echo
+    say "${Y}!${N}  $label сервер $ip: KIT установлен, но панель не работает (x-ui: ${st:-???})."
+    say "    Такое бывает, когда установке помешал чужой софт. Могу снести её и поставить начисто."
+    ask "    Снести старую установку? Все пользователи и настройки панели на $ip будут удалены. [Y/n]" Y
+    [[ ${REPLY,,} != n && ${REPLY,,} != no ]] || die "остановлено. Почините $ip вручную или разрешите переустановку."
+    ssh_exec "$ip" "$user" "$port" "$pass" 'kit uninstall --yes --no-backup </dev/null >/dev/null 2>&1; true' >/dev/null 2>&1
+    ok "$ip: старая установка снесена, ставлю начисто"
+  fi
+  # 2. Порт 443 занят чужим – убираем с предупреждением: VPN-серверу нужен весь 443.
   listener=$(SSH_EXEC_TIMEOUT=25 ssh_exec "$ip" "$user" "$port" "$pass" 'ss -ltnp 2>/dev/null | grep ":443 " | head -1' 2>/dev/null)
   [[ -n $listener ]] || return 0
   echo
   if grep -q nginx <<<"$listener"; then
     say "${Y}!${N}  $label сервер $ip: порт 443 занят чужим nginx-сайтом – с ним VPN-сервер не поднимется правильно."
-    say "    Могу отключить чужие сайты nginx (файлы останутся в /etc/nginx, удаляется только их активация)."
-    ask "    Отключить чужие nginx-сайты на $ip? [Y/n]" Y
+    ask "    Отключить чужие nginx-сайты на $ip? Файлы останутся в /etc/nginx, удаляется только их активация. [Y/n]" Y
     if [[ ${REPLY,,} != n && ${REPLY,,} != no ]]; then
       ssh_exec "$ip" "$user" "$port" "$pass" 'rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null; (systemctl reload nginx 2>/dev/null || systemctl stop nginx 2>/dev/null) >/dev/null 2>&1; true' >/dev/null 2>&1
       sleep 1
       left=$(SSH_EXEC_TIMEOUT=25 ssh_exec "$ip" "$user" "$port" "$pass" 'ss -ltn 2>/dev/null | grep ":443 " | head -1' 2>/dev/null)
-      if [[ -z $left ]]; then ok "$ip: порт 443 освобождён"; return 0; fi
+      if [[ -z $left ]]; then ok "$ip: чужие сайты отключены, порт 443 свободен"; return 0; fi
     fi
     die "порт 443 на $ip всё ещё занят – освободите его вручную и запустите мастер снова, либо пересоздайте VPS чистой."
   fi
   say "${Y}!${N}  $label сервер $ip: порт 443 занят процессом: ${listener:0:100}"
-  ask "    Продолжить всё равно? [y/N]" ""
-  [[ ${REPLY,,} == y || ${REPLY,,} == yes ]] || die "остановлено. Освободите 443/tcp на $ip и запустите мастер снова."
+  ask "    Убить этот процесс и продолжить? [Y/n]" Y
+  [[ ${REPLY,,} != n && ${REPLY,,} != no ]] || die "остановлено. Освободите 443/tcp на $ip и запустите мастер снова."
+  pid=$(grep -o 'pid=[0-9]*' <<<"$listener" | head -1 | cut -d= -f2)
+  ssh_exec "$ip" "$user" "$port" "$pass" "kill ${pid:-0} 2>/dev/null; sleep 1; kill -9 ${pid:-0} 2>/dev/null; true" >/dev/null 2>&1
+  left=$(SSH_EXEC_TIMEOUT=25 ssh_exec "$ip" "$user" "$port" "$pass" 'ss -ltn 2>/dev/null | grep ":443 " | head -1' 2>/dev/null)
+  [[ -z $left ]] && { ok "$ip: процесс убит, порт 443 свободен"; return 0; }
+  die "не смог освободить 443/tcp на $ip (процесс, вероятно, перезапускается) – разберитесь вручную или пересоздайте VPS."
 }
 
 # Установка KIT там, где его нет.
