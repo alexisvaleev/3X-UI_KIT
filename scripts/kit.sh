@@ -12,7 +12,7 @@
 set -Eeuo pipefail
 export LC_ALL=C.UTF-8  # ширина колонок по символам, а не байтам
 
-KIT_VERSION="1.5.5"
+KIT_VERSION="1.5.6"
 KIT_RAW="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/main"
 # Файлы новой версии берём из её тега, а не из меняющейся ветки main.
 kit_ref_raw() { echo "https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v$1"; }
@@ -2931,6 +2931,144 @@ net_fp() { # отпечаток
 }
 
 
+
+# ---------- watch: монитор доступности сервера из РФ с алертами в Telegram ----------
+# Смысл: когда ТСПУ заблокирует IP, сервер об этом не узнает — локально он жив.
+# Смотрим снаружи через российские ноды check-host.net: если сервер жив локально,
+# но из РФ к нему никто не достукивается — похоже на блокировку, шлём алерт.
+WATCH_ENV=/etc/kit/watch.env
+WATCH_STATE=/etc/kit/watch.state
+WATCH_LOG=/var/log/kit-watch.log
+
+watch_tg() { # текст — отправка в Telegram, если настроен; всегда пишет в лог
+  local text=$1
+  printf '%s %s\n' "$(date '+%F %T')" "$text" >>"$WATCH_LOG"
+  [[ -n ${TG_TOKEN:-} && -n ${TG_CHAT:-} ]] || return 0
+  curl -fsS -m 15 -o /dev/null -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=$TG_CHAT" --data-urlencode "text=$text" 2>/dev/null \
+    || echo "$(date '+%F %T') telegram: не удалось отправить" >>"$WATCH_LOG"
+}
+
+# Один раунд проверки. Возвращает: ok (жив), blocked (похоже на блокировку), down (не слушает сам).
+watch_probe() {
+  ss -ltn 2>/dev/null | grep -q ':443 ' || { echo down; return; }
+  local pub rid resp res
+  pub=$(curl -fsS -4 -m 8 ifconfig.me 2>/dev/null) || { echo unknown; return; }
+  resp=$(curl -fsS -m 15 -H 'Accept: application/json' \
+    "https://check-host.net/check-tcp?host=${pub}:443&node=ru1.node.check-host.net&node=ru3.node.check-host.net" 2>/dev/null)
+  rid=$(jq -r '.request_id // empty' <<<"$resp" 2>/dev/null)
+  [[ -n $rid ]] || { echo unknown; return; }
+  # Результаты нод приходят не сразу: опрашиваем, пока обе не ответят (иначе ложный "blocked").
+  local i
+  for i in 1 2 3 4 5; do
+    sleep 5
+    res=$(curl -fsS -m 15 -H 'Accept: application/json' "https://check-host.net/check-result/$rid" 2>/dev/null)
+    [[ -n $res ]] || continue
+    jq -e '[keys_unsorted[] | select(startswith("ru"))] | length >= 1' <<<"$res" >/dev/null 2>&1       && jq -e '[.[] | select(type == "array" and length > 0)] | length >= 2' <<<"$res" >/dev/null 2>&1 && break
+  done
+  [[ -n $res ]] || { echo unknown; return; }
+  # Обе ноды должны ответить; ответила одна — раунд недостоверен, пропускаем.
+  jq -e '[.[] | select(type == "array" and length > 0)] | length >= 2' <<<"$res" >/dev/null 2>&1 || { echo unknown; return; }
+  # Успешный TCP-коннект — объект с полем time. Есть хоть один — сервер жив из РФ.
+  if jq -e '[.. | objects | .time? // empty] | length > 0' <<<"$res" >/dev/null 2>&1; then echo ok; else echo blocked; fi
+}
+
+watch_run() {
+  [[ -f $WATCH_ENV ]] && . "$WATCH_ENV"
+  local verdict fails incident
+  verdict=$(watch_probe)
+  fails=$(grep -oP '(?<=^fails=)\d+' "$WATCH_STATE" 2>/dev/null || echo 0)
+  incident=$(grep -oP '(?<=^incident=)\d+' "$WATCH_STATE" 2>/dev/null || echo 0)
+  case $verdict in
+    ok)
+      if [[ $incident == 1 ]]; then
+        watch_tg "✅ Входной сервер $(curl -fsS -4 -m 8 ifconfig.me 2>/dev/null) снова доступен из РФ."
+      fi
+      printf 'fails=0\nincident=0\n' >"$WATCH_STATE" ;;
+    blocked | down)
+      fails=$((fails + 1))
+      printf 'fails=%s\nincident=%s\n' "$fails" "$incident" >"$WATCH_STATE"
+      # антифлап: два подряд плохих раунда, чтобы не кричать из-за сбоя самих нод мониторинга
+      if ((fails >= 2 && incident == 0)); then
+        local ip; ip=$(curl -fsS -4 -m 8 ifconfig.me 2>/dev/null || echo '?')
+        if [[ $verdict == blocked ]]; then
+          watch_tg "⚠️ Входной сервер $ip недоступен из РФ при живом сервисе — похоже на блокировку ТСПУ. Что делать: manuals/cascade-recovery.md (новый VPS → мастер каскада → обновить подписку)."
+        else
+          watch_tg "⚠️ Входной сервер $ip: порт 443 не слушается — nginx/xray упали или сервер перезагружается. Проверьте: systemctl status nginx x-ui."
+        fi
+        printf 'fails=%s\nincident=1\n' "$fails" >"$WATCH_STATE"
+      fi ;;
+    unknown) : ;; # check-host/ifconfig не ответили — пропускаем раунд молча
+  esac
+}
+
+cmd_watch() {
+  local sub=${1:-status}
+  case $sub in
+    on)
+      local token=${2:-} chat=${3:-}
+      if [[ -z $token ]]; then
+        echo "Нужен бот в Telegram: напишите @BotFather → /newbot, получите токен."
+        echo "chat id узнаётся так: напишите боту любое сообщение, затем откройте"
+        echo "  https://api.telegram.org/bot<токен>/getUpdates — там будет chat.id"
+        read -r -p "Токен бота (Enter — без телеграма, только локальный лог): " token </dev/tty || exit 0
+        [[ -n $token ]] && read -r -p "Chat id: " chat </dev/tty
+      fi
+      {
+        [[ -n $token ]] && printf 'TG_TOKEN=%q\nTG_CHAT=%q\n' "$token" "$chat"
+      } >"$WATCH_ENV"; chmod 600 "$WATCH_ENV"
+      cat >/etc/systemd/system/kit-watch.service <<UNIT
+[Unit]
+Description=3X-UI KIT: монитор доступности сервера из РФ
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/kit watch run
+StandardOutput=append:$WATCH_LOG
+StandardError=append:$WATCH_LOG
+UNIT
+      cat >/etc/systemd/system/kit-watch.timer <<'UNIT'
+[Unit]
+Description=3X-UI KIT: проверка доступности из РФ каждые 10 минут
+
+[Timer]
+OnCalendar=*:0/10
+RandomizedDelaySec=90
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+      systemctl daemon-reload
+      systemctl enable --now kit-watch.timer >/dev/null 2>&1
+      ok "Монитор включён: проверка каждые 10 минут из российских нод check-host.net."
+      [[ -n $token ]] && { . "$WATCH_ENV"; watch_tg "📡 Монитор доступности включён на этом сервере. Если IP заблокируют — узнаете здесь первым."; say "Тестовое сообщение отправлено в Telegram — проверьте."; }
+      say "Выключить: kit watch off · статус: kit watch status" ;;
+    off)
+      systemctl disable --now kit-watch.timer >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/kit-watch.timer /etc/systemd/system/kit-watch.service
+      systemctl daemon-reload
+      ok "Монитор выключен." ;;
+    run) watch_run ;;
+    test)
+      [[ -f $WATCH_ENV ]] && . "$WATCH_ENV"
+      [[ -n ${TG_TOKEN:-} ]] || die "Telegram не настроен: kit watch on"
+      watch_tg "📡 Тест: монитор доступности работает."
+      ok "Тестовое сообщение отправлено." ;;
+    status)
+      if systemctl is-active -q kit-watch.timer 2>/dev/null; then
+        say "Монитор ${G}включён${N}: проверка каждые 10 минут."
+        [[ -f $WATCH_STATE ]] && say "Состояние: $(tr '\n' ' ' <"$WATCH_STATE")"
+        [[ -f $WATCH_LOG ]] && { say "Последние события:"; tail -3 "$WATCH_LOG" | sed 's/^/  /'; }
+      else
+        say "Монитор выключен. Включить: kit watch on (понадобится бот @BotFather — необязателен)."
+      fi ;;
+    *) die "kit watch [on | off | status | run | test]" ;;
+  esac
+}
+
 # ---------- каскад: входной сервер → зарубежный ----------
 
 # Шаблон Xray хранится в панели (xrayTemplateConfig) и переживает правки подключений:
@@ -3532,6 +3670,8 @@ case "$cmd_key" in
   "user enforce") shift 2; cmd_enforce "$@" ;;
   "user vision") shift 2; cmd_vision "$@" ;;
   "cascade "*) shift; cmd_cascade "$@" ;;
+  "watch "*) shift; cmd_watch "$@" ;;
+  "watch") cmd_watch ;;
   "net ") shift; cmd_net; update_hint ;;
   "net "*) shift; cmd_net "$@" ;;
   "sni rotate") shift 2; sni_rotate "$@" ;;

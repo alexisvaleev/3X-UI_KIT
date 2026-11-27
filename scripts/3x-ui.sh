@@ -39,7 +39,7 @@ wait_apt_idle() {
 XUI_VERSION="v3.11.0"
 # SHA256 установщика 3X-UI этой версии: тег могут передвинуть, а хеш – нет (проверено 2026-11-26).
 XUI_INSTALL_SHA256="9684bae4f769b2127fcceceb4f200045657381311867529e6ba76c6b58e2825d"
-KIT_VERSION="1.5.5"
+KIT_VERSION="1.5.6"
 # kit и kit-sub берём из того же релиза, что и этот скрипт, а не из меняющейся ветки main.
 KIT_RAW="https://raw.githubusercontent.com/alexisvaleev/3X-UI_KIT/v$KIT_VERSION"
 # Ядро Xray для панели. Версия закреплена: конфигурация KIT проверена именно с ней,
